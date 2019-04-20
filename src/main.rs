@@ -132,6 +132,45 @@ struct Fighter {
     hp: i32,
     defense: i32,
     power: i32,
+    on_death: DeathCallback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DeathCallback {
+    Player,
+    Monster,
+}
+
+impl DeathCallback {
+    fn callback(self, object: &mut Object) {
+        use DeathCallback::*;
+        let callback: fn(&mut Object) = match self {
+            Player => player_death,
+            Monster => monster_death,
+        };
+        callback(object);
+    }
+}
+
+fn player_death(player: &mut Object) {
+    // the game has ended!
+    println!("You died!");
+
+    // transform player into a corpse!
+    player.char = '%';
+    player.color = colors::DARK_RED;
+}
+
+fn monster_death(monster: &mut Object) {
+    // transform into a corpse. It doesn't block, can be attacked and doesn't
+    // move
+    println!("{} is dead!", monster.name);
+    monster.char = '%';
+    monster.color = colors::DARK_RED;
+    monster.blocks = false;
+    monster.fighter = None;
+    monster.ai = None;
+    monster.name = format!("remains of {}", monster.name);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -199,6 +238,13 @@ impl Object {
                 fighter.hp -= damage;
             }
         }
+        // check for death
+        if let Some(fighter) = self.fighter {
+            if fighter.hp <= 0 {
+                self.alive = false;
+                fighter.on_death.callback(self);
+            }
+        }
     }
 
     pub fn attack(&mut self, target: &mut Object) {
@@ -242,7 +288,7 @@ fn player_move_or_attack(dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
 
     // try to find an attackable object there
     let target_id = objects.iter().position(|object| {
-        object.pos() == (x, y)
+        object.fighter.is_some() && object.pos() == (x, y)
     });
 
     // attack if there is a target. Otherwise, move
@@ -289,13 +335,15 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             let mut monster = if rand::random::<f32>() < 0.8 {  // 80% chance to create an orc
                 // create orc
                 let mut orc = Object::new(x, y, 'o', "orc", colors::DESATURATED_GREEN, true);
-                orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0, power: 2});
+                orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0, power: 2,
+                                           on_death: DeathCallback::Monster});
                 orc.ai = Some(Ai);
                 orc
             } else {
                 // create troll
                 let mut troll = Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true);
-                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0, power: 1});
+                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0, power: 1,
+                                             on_death: DeathCallback::Monster});
                 troll.ai = Some(Ai);
                 troll
             };
@@ -393,21 +441,22 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &mu
         }
     }
 
-// draw all visible objects in the list
-    for object in objects {
-        if fov_map.is_in_fov(object.x, object.y) {
-            object.draw(con);
-        }
+    let mut to_draw: Vec<_> = objects.iter().filter(|o| fov_map.is_in_fov(o.x, o.y)).collect();
+    // sort so that non-blocking objects come first
+    to_draw.sort_by(|o1, o2| { o1.blocks.cmp(&o2.blocks) });
+    // draw the objects in the list
+    for object in to_draw {
+        object.draw(con);
     }
-
-    // blit contents of "con" to root console and present it
-    blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
 
     // show the player's stats
     if let Some(fighter) = objects[PLAYER].fighter {
         root.print_ex(1, SCREEN_HEIGHT - 2, BackgroundFlag::None, TextAlignment::Left,
                       format!("HP: {}/{} ", fighter.hp, fighter.max_hp));
     }
+
+    // blit contents of "con" to root console and present it
+    blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
 }
 
 fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map) -> PlayerAction {
@@ -461,7 +510,8 @@ fn main() {
 
     // creation of objects
     let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
-    player.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 1, power: 2});
+    player.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 1, power: 2,
+                                  on_death: DeathCallback::Player});
     player.alive = true;
 
     // objects list
