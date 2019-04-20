@@ -27,6 +27,13 @@ const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
 const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PlayerAction {
+    TookTurn,
+    DidntTakeTurn,
+    Exit,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Tile {
     blocked: bool,
@@ -281,28 +288,41 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &mu
     blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
 }
 
-fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map) -> bool {
+fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map) -> PlayerAction {
+    use PlayerAction::*;
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
 
     let key = root.wait_for_keypress(true);
-    match key {
-        Key { code: Enter, alt: true, .. } => {
+    let player_alive = objects[PLAYER].alive;
+    match (key, player_alive) {
+        (Key { code: Escape, .. }, _) => Exit, // exit game
+        (Key { code: Enter, alt: true, .. }, _) => {
             // Alt+Enter: toggle fullscreen
             let fullscreen = root.is_fullscreen();
             root.set_fullscreen(!fullscreen);
-        }
-        Key { code: Escape, .. } => return true, // exit game
+            DidntTakeTurn
+        },
         // movement keys
-        Key { code: Up, .. } => move_by(PLAYER, 0, -1, map, objects),
-        Key { code: Down, .. } => move_by(PLAYER, 0, 1, map, objects),
-        Key { code: Left, .. } => move_by(PLAYER, -1, 0, map, objects),
-        Key { code: Right, .. } => move_by(PLAYER, 1, 0, map, objects),
+        (Key { code: Up, .. }, true) => {
+            move_by(PLAYER, 0, -1, map, objects);
+            TookTurn
+        },
+        (Key { code: Down, .. }, true) => {
+            move_by(PLAYER, 0, 1, map, objects);
+            TookTurn
+        },
+        (Key { code: Left, .. }, true) => {
+            move_by(PLAYER, -1, 0, map, objects);
+            TookTurn
+        },
+        (Key { code: Right, .. }, true) => {
+            move_by(PLAYER, 1, 0, map, objects);
+            TookTurn
+        },
 
-        _ => {},
+        _ => DidntTakeTurn,
     }
-
-    false
 }
 
 fn main() {
@@ -354,8 +374,8 @@ fn main() {
         // handle keys and exit the game if needed
         let player = &mut objects[PLAYER];
         previous_player_position = (player.x, player.y);
-        let exit = handle_keys(&mut root, &mut objects, &map);
-        if exit {
+        let player_action = handle_keys(&mut root, &mut objects, &map);
+        if player_action == PlayerAction::Exit {
             break
         }
     }
