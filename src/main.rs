@@ -70,7 +70,7 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             create_room(new_room, &mut map);
 
             // add some content to this room, such as monsters
-            place_objects(new_room, objects);
+            place_objects(new_room, &map, objects);
 
             // center coordinates of the new room, will be useful later
             let (new_x, new_y) = new_room.center();
@@ -125,26 +125,16 @@ impl Object {
         self.x = x;
         self.y = y;
     }
-}
 
-impl Object {
-    pub fn new(x: i32, y: i32, char: char, color: Color, name: &str, blocks: bool) -> Self {
+    pub fn new(x: i32, y: i32, char: char, name: &str, color: Color, blocks: bool) -> Self {
         Object {
             x: x,
             y: y,
             char: char,
-            color: color,
             name: name.into(),
+            color: color,
             blocks: blocks,
             alive: false,
-        }
-    }
-
-    /// move by the given amount
-    pub fn move_by(id: usize, dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
-        let (x, y) = objects[id].pos();
-        if !is_blocked(x + dx, y + dy, map, objects) {
-            objects[id].set_pos(x + dx, y + dy);
         }
     }
 
@@ -160,7 +150,15 @@ impl Object {
     }
 }
 
-fn place_objects(room: Rect, objects: &mut Vec<Object>) {
+/// move by the given amount
+fn move_by(id: usize, dx: i32, dy: i32, map: &Map, objects: &mut [Object]) {
+    let (x, y) = objects[id].pos();
+    if !is_blocked(x + dx, y + dy, map, objects) {
+        objects[id].set_pos(x + dx, y + dy);
+    }
+}
+
+fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
     // choose random number of monster
     let num_monsters = rand::thread_rng().gen_range(0, MAX_ROOM_MONSTERS + 1);
 
@@ -169,14 +167,18 @@ fn place_objects(room: Rect, objects: &mut Vec<Object>) {
         let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
         let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
 
-        let mut monster = if rand::random::<f32>() < 0.8 {  // 80% chance to create an orc
-            // create orc
-            Object::new(x, y, 'o', colors::DESATURATED_GREEN)
-        } else {
-            Object::new(x, y, 'T', colors::DARKER_GREEN)
-        };
-
-    objects.push(monster);
+        // only place it if the tile is not blocked
+        if !is_blocked(x, y, map, objects) {
+            // generate the monsters
+            let mut monster = if rand::random::<f32>() < 0.8 {  // 80% chance to create an orc
+                // create orc
+                Object::new(x, y, 'o', "orc", colors::DESATURATED_GREEN, true)
+            } else {
+                Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true)
+            };
+            monster.alive = true;
+            objects.push(monster);
+        }
     }
 }
 
@@ -292,10 +294,10 @@ fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map) -> bool {
         }
         Key { code: Escape, .. } => return true, // exit game
         // movement keys
-        Key { code: Up, .. } => objects[PLAYER].move_by(PLAYER, 1, 0, map, objects),
-        Key { code: Down, .. } => objects[PLAYER].move_by(PLAYER, 0, 1, map, objects),
-        Key { code: Left, .. } => objects[PLAYER].move_by(PLAYER, -1, 0, map, objects),
-        Key { code: Right, .. } => objects[PLAYER].move_by(PLAYER, 1, 0, map, objects),
+        Key { code: Up, .. } => move_by(PLAYER, 0, -1, map, objects),
+        Key { code: Down, .. } => move_by(PLAYER, 0, 1, map, objects),
+        Key { code: Left, .. } => move_by(PLAYER, -1, 0, map, objects),
+        Key { code: Right, .. } => move_by(PLAYER, 1, 0, map, objects),
 
         _ => {},
     }
@@ -316,10 +318,11 @@ fn main() {
     let mut con = Offscreen::new(MAP_WIDTH, MAP_HEIGHT);
 
     // creation of objects
-    let player = Object::new(0, 0, '@', colors::WHITE);
+    let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
+    player.alive = true;
 
     // objects list
-    let mut objects = [player];
+    let mut objects = vec![player];
 
     // generate map (at this point it's not drawn to the screen)
     let mut map = make_map(&mut objects);
