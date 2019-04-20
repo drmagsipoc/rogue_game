@@ -11,7 +11,7 @@ const SCREEN_WIDTH: i32= 80;
 const SCREEN_HEIGHT: i32 = 50;
 const LIMIT_FPS: i32 = 20;
 const MAP_WIDTH: i32 = 80;
-const MAP_HEIGHT: i32 = 45;
+const MAP_HEIGHT: i32 = 43;
 const ROOM_MAX_SIZE: i32 = 10;
 const ROOM_MIN_SIZE: i32 = 6;
 const MAX_ROOMS: i32 = 30;
@@ -19,6 +19,10 @@ const FOV_ALGO: FovAlgorithm = FovAlgorithm::Basic;
 const FOV_LIGHT_WALLS: bool = true;
 const TORCH_RADIUS: i32 = 10;
 const MAX_ROOM_MONSTERS: i32 = 3;
+//sizes and coordinates relevant for the GUI
+const BAR_WIDTH: i32 = 20;
+const PANEL_HEIGHT: i32 = 7;
+const PANEL_Y: i32 = SCREEN_HEIGHT - PANEL_HEIGHT;
 // player will always be the first object
 const PLAYER: usize = 0;
 
@@ -409,9 +413,39 @@ fn is_blocked(x: i32, y: i32, map: &Map, objects: &[Object]) -> bool {
     })
 }
 
+fn render_bar(panel: &mut Offscreen,
+              x: i32,
+              y: i32,
+              total_width: i32,
+              name: &str,
+              value: i32,
+              maximum: i32,
+              bar_color: Color,
+              back_color: Color)
+{
+    // render a bar for HP, experience etc. Calculate width of the bar
+    let bar_width = (value as f32 / maximum as f32 * total_width as f32) as i32;
+
+    // reneder the background first
+    panel.set_default_background(back_color);
+    panel.rect(x, y, total_width, 1, false, BackgroundFlag::Screen);
+
+    // now render the bar on top
+    panel.set_default_background(bar_color);
+    if bar_width > 0 {
+        panel.rect(x, y, bar_width, 1, false, BackgroundFlag::Screen);
+    }
+
+    // add centered text with values
+    panel.set_default_background(colors::WHITE);
+    panel.print_ex(x + total_width / 2, y, BackgroundFlag::None, TextAlignment::Center,
+                   &format!("{}: {}/{}", name, value, maximum));
+}
+
 /// Draw all of the objects in the list
-fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &mut Map,
-              fov_map: &mut FovMap, fov_recompute: bool) {
+fn render_all(root: &mut Root, con: &mut Offscreen, panel: &mut Offscreen,
+              objects: &[Object], map: &mut Map, fov_map: &mut FovMap,
+              fov_recompute: bool) {
     if fov_recompute {
         // recompute FOV if needed (the player moved or something)
         let player = &objects[PLAYER];
@@ -448,15 +482,21 @@ fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &mu
     for object in to_draw {
         object.draw(con);
     }
-
-    // show the player's stats
-    if let Some(fighter) = objects[PLAYER].fighter {
-        root.print_ex(1, SCREEN_HEIGHT - 2, BackgroundFlag::None, TextAlignment::Left,
-                      format!("HP: {}/{} ", fighter.hp, fighter.max_hp));
-    }
-
     // blit contents of "con" to root console and present it
     blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
+
+    // prepare to render the GUI panel
+    panel.set_default_background(colors::BLACK);
+    panel.clear();
+
+    // show the player's stats
+    let hp = objects[PLAYER].fighter.map_or(0, |f| f.hp);
+    let max_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp);
+    render_bar(panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp, colors::LIGHT_RED,
+               colors::DARKER_RED);
+
+    // blit contents of "con" to root console and present it
+    blit(panel, (0, 0), (SCREEN_WIDTH, PANEL_HEIGHT), root, (0, PANEL_Y), 1.0, 1.0);
 }
 
 fn handle_keys(root: &mut Root, objects: &mut [Object], map: &Map) -> PlayerAction {
@@ -531,11 +571,12 @@ fn main() {
 
     let mut previous_player_position = (-1, -1);
 
+    let mut panel = Offscreen::new(SCREEN_WIDTH, PANEL_HEIGHT);
     while !root.window_closed() {
         con.set_default_foreground(colors::WHITE);
     
         let fov_recompute = previous_player_position != (objects[PLAYER].x, objects[PLAYER].y);
-        render_all(&mut root, &mut con, &objects, &mut map, &mut fov_map, fov_recompute);
+        render_all(&mut root, &mut con, &mut panel, &objects, &mut map, &mut fov_map, fov_recompute);
 
         root.flush();
 
