@@ -29,11 +29,31 @@ const PLAYER: usize = 0;
 const MSG_X: i32 = BAR_WIDTH + 2;
 const MSG_WIDTH: i32 = SCREEN_WIDTH - BAR_WIDTH - 2;
 const MSG_HEIGHT: usize = PANEL_HEIGHT as usize - 1;
+const MAX_ROOM_ITEMS: i32 = 2;
 
 const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
 const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
 const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Item {
+    Heal,
+}
+
+/// add to player's inventory and remove from the map
+fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec<Object>,
+                messages: &mut Messages) {
+    if inventory.len() >= 26 {
+        message(messages,
+                format!("Your inventory is full, cannot pick up {}", objects[object_id].name),
+                colors::RED);
+    } else {
+        let item = objects.swap_remove(object_id);
+        message(messages, format!("You picked up {}!", item.name), colors::GREEN);
+        inventory.push(item);
+    }
+}
 
 type Messages = Vec<(String, Color)>;
 
@@ -206,6 +226,7 @@ struct Object {
     color: Color,
     fighter: Option<Fighter>,
     ai: Option<Ai>,
+    item: Option<Item>,
 }
 
 impl Object {
@@ -229,6 +250,7 @@ impl Object {
             alive: false,
             fighter: None,
             ai: None,
+            item: None,
         }
     }
 
@@ -372,6 +394,24 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             };
             monster.alive = true;
             objects.push(monster);
+        }
+    }
+
+    // choose random number of items
+    let num_items = rand::thread_rng().gen_range(0, MAX_ROOM_ITEMS + 1);
+
+    for _ in 0..num_items {
+        // choose random spot for this item
+        let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
+        let y = rand::thread_rng().gen_range(room.y1 + 1, room.y2);
+
+        // only place the item if the tile is not blocked
+        if !is_blocked(x, y, map, objects) {
+            // create healing potion
+            let mut object = Object::new(x,  y, '!', "healing potion",
+                                         colors::VIOLET, false);
+            object.item = Some(Item::Heal);
+            objects.push(object);
         }
     }
 }
@@ -551,8 +591,8 @@ fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> 
     names.join(", ")
 }
 
-fn handle_keys(key: Key, root: &mut Root, objects: &mut [Object], map: &Map,
-               messages: &mut Messages) -> PlayerAction {
+fn handle_keys(key: Key, root: &mut Root, objects: &mut Vec<Object>, map: &Map,
+               inventory: &mut Vec<Object>, messages: &mut Messages) -> PlayerAction {
     use PlayerAction::*;
     use tcod::input::Key;
     use tcod::input::KeyCode::*;
@@ -565,25 +605,34 @@ fn handle_keys(key: Key, root: &mut Root, objects: &mut [Object], map: &Map,
             let fullscreen = root.is_fullscreen();
             root.set_fullscreen(!fullscreen);
             DidntTakeTurn
-        },
+        }
         // movement keys
         (Key { code: Up, .. }, true) => {
             player_move_or_attack(0, -1, map, objects, messages);
             TookTurn
-        },
+        }
         (Key { code: Down, .. }, true) => {
             player_move_or_attack(0, 1, map, objects, messages);
             TookTurn
-        },
+        }
         (Key { code: Left, .. }, true) => {
             player_move_or_attack(-1, 0, map, objects, messages);
             TookTurn
-        },
+        }
         (Key { code: Right, .. }, true) => {
             player_move_or_attack(1, 0, map, objects, messages);
             TookTurn
-        },
-
+        }
+        (Key { printable: 'g', .. }, true) => {
+            // pick up an item
+            let item_id = objects.iter().position(|object| {
+                object.pos() == objects[PLAYER].pos() && object.item.is_some()
+            });
+            if let Some(item_id) = item_id {
+                pick_item_up(item_id, objects, inventory, messages);
+            }
+            DidntTakeTurn
+        }
         _ => DidntTakeTurn,
     }
 }
@@ -633,6 +682,8 @@ fn main() {
 
     let mut mouse = Default::default();
     let mut key = Default::default();
+
+    let mut inventory = vec![];
     while !root.window_closed() {
         match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
             Some((_, Event::Mouse(m))) => mouse = m,
@@ -656,7 +707,7 @@ fn main() {
         let player = &mut objects[PLAYER];
         previous_player_position = (player.x, player.y);
         let player_action = handle_keys(key, &mut root, &mut objects, &map,
-                                        &mut messages);
+                                        &mut inventory, &mut messages);
         if player_action == PlayerAction::Exit {
             break
         }
