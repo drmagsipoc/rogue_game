@@ -38,6 +38,14 @@ const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
 const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
 
+struct Tcod {
+    root: Root,
+    con: Offscreen,
+    panel: Offscreen,
+    fov: FovMap,
+    mouse: Mouse,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Item {
     Heal,
@@ -62,7 +70,7 @@ fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec
     }
 }
 
-fn use_item(inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Object],
+fn use_item(tcod: &mut Tcod, inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Object],
             messages: &mut Messages) {
     use Item::*;
     // just call the "use function" if it is defined
@@ -70,7 +78,7 @@ fn use_item(inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Obj
         let on_use = match item {
             Heal => cast_heal,
         };
-        match on_use(inventory_id, objects, messages) {
+        match on_use(tcod, inventory_id, objects, messages) {
             UseResult::UsedUp => {
                 // destroy after use, unless it was cancelled for some reason
                 inventory.remove(inventory_id);
@@ -87,7 +95,7 @@ fn use_item(inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Obj
 }
 
 // Heals the player
-fn cast_heal(_inventory_id: usize, objects: &mut [Object], messages: &mut Messages) -> UseResult
+fn cast_heal(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object], messages: &mut Messages) -> UseResult
 {
     if let Some(fighter) = objects[PLAYER].fighter {
         if fighter.hp == fighter.max_hp {
@@ -624,16 +632,15 @@ fn inventory_menu(inventory: &[Object], header: &str, root: &mut Root) -> Option
 }
 
 /// Draw all of the objects in the list
-fn render_all(root: &mut Root, con: &mut Offscreen, panel: &mut Offscreen,
-              objects: &[Object], map: &mut Map, fov_map: &mut FovMap,
-              messages: &mut Messages, fov_recompute: bool, mouse: Mouse) {
+fn render_all(tcod: &mut Tcod, objects: &[Object], map: &mut Map, 
+              messages: &mut Messages, fov_recompute: bool) {
     if fov_recompute {
         // recompute FOV if needed (the player moved or something)
         let player = &objects[PLAYER];
-        fov_map.compute_fov(player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO);
+        tcod.fov.compute_fov(player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO);
         for y in 0..MAP_HEIGHT {
             for x in 0..MAP_WIDTH {
-                let visible = fov_map.is_in_fov(x, y);
+                let visible = tcod.fov.is_in_fov(x, y);
                 let wall = map[x as usize][y as usize].block_sight;
                 let color = match (visible, wall) {
                     // outside of field of view:
@@ -650,51 +657,52 @@ fn render_all(root: &mut Root, con: &mut Offscreen, panel: &mut Offscreen,
                 }
                 if *explored {
                     // show explored tile only (any visible tile is eplored already)
-                    con.set_char_background(x, y, color, BackgroundFlag::Set);
+                    tcod.con.set_char_background(x, y, color, BackgroundFlag::Set);
                 }
             }
         }
     }
 
-    let mut to_draw: Vec<_> = objects.iter().filter(|o| fov_map.is_in_fov(o.x, o.y)).collect();
+    let mut to_draw: Vec<_> = objects.iter().filter(|o| tcod.fov.is_in_fov(o.x, o.y)).collect();
     // sort so that non-blocking objects come first
     to_draw.sort_by(|o1, o2| { o1.blocks.cmp(&o2.blocks) });
     // draw the objects in the list
     for object in to_draw {
-        object.draw(con);
+        object.draw(&mut tcod.con);
     }
     // blit contents of "con" to root console and present it
-    blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
+    blit(&mut tcod.con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), &mut tcod.root, (0, 0), 1.0, 1.0);
 
     // prepare to render the GUI panel
-    panel.set_default_background(colors::BLACK);
-    panel.clear();
+    tcod.panel.set_default_background(colors::BLACK);
+    tcod.panel.clear();
 
     // show the player's stats
     let hp = objects[PLAYER].fighter.map_or(0, |f| f.hp);
     let max_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp);
-    render_bar(panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp, colors::LIGHT_RED,
-               colors::DARKER_RED);
+    render_bar(&mut tcod.panel, 1, 1, BAR_WIDTH, "HP", hp, max_hp,
+               colors::LIGHT_RED, colors::DARKER_RED);
 
     // display the object names under the mouse
-    panel.set_default_foreground(colors::LIGHT_GREY);
-    panel.print_ex(1, 0, BackgroundFlag::None, TextAlignment::Left,
-                   get_names_under_mouse(mouse, objects, fov_map));
+    tcod.panel.set_default_foreground(colors::LIGHT_GREY);
+    tcod.panel.print_ex(1, 0, BackgroundFlag::None, TextAlignment::Left,
+                   get_names_under_mouse(tcod.mouse, objects, &tcod.fov));
 
     // print game messages
     let mut y = MSG_HEIGHT as i32;
     for &(ref msg, color) in messages.iter().rev() {
-        let msg_height = panel.get_height_rect(MSG_X, y, MSG_WIDTH, 0,  msg);
+        let msg_height = tcod.panel.get_height_rect(MSG_X, y, MSG_WIDTH, 0, msg);
         y -= msg_height;
         if y < 0 {
             break;
         }
-        panel.set_default_foreground(color);
-        panel.print_rect(MSG_X, y, MSG_WIDTH, 0, msg);
+        tcod.panel.set_default_foreground(color);
+        tcod.panel.print_rect(MSG_X, y, MSG_WIDTH, 0, msg);
     }
 
     // blit contents of "con" to root console and present it
-    blit(panel, (0, 0), (SCREEN_WIDTH, PANEL_HEIGHT), root, (0, PANEL_Y), 1.0, 1.0);
+    blit(&mut tcod.panel, (0, 0), (SCREEN_WIDTH, PANEL_HEIGHT), &mut tcod.root,
+         (0, PANEL_Y), 1.0, 1.0);
 }
 
 /// return a string with names of all objects under the mouse
@@ -713,7 +721,7 @@ fn get_names_under_mouse(mouse: Mouse, objects: &[Object], fov_map: &FovMap) -> 
     names.join(", ")
 }
 
-fn handle_keys(key: Key, root: &mut Root, objects: &mut Vec<Object>, map: &Map,
+fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>, map: &Map,
                inventory: &mut Vec<Object>, messages: &mut Messages) -> PlayerAction {
     use PlayerAction::*;
     use tcod::input::Key;
@@ -724,8 +732,8 @@ fn handle_keys(key: Key, root: &mut Root, objects: &mut Vec<Object>, map: &Map,
         (Key { code: Escape, .. }, _) => Exit, // exit game
         (Key { code: Enter, alt: true, .. }, _) => {
             // Alt+Enter: toggle fullscreen
-            let fullscreen = root.is_fullscreen();
-            root.set_fullscreen(!fullscreen);
+            let fullscreen = tcod.root.is_fullscreen();
+            tcod.root.set_fullscreen(!fullscreen);
             DidntTakeTurn
         }
         // movement keys
@@ -760,9 +768,9 @@ fn handle_keys(key: Key, root: &mut Root, objects: &mut Vec<Object>, map: &Map,
             let inventory_index = inventory_menu(
                 inventory,
                 "Press the key next to an item to use it, or any other to cancel.\n", 
-                root);
+                &mut tcod.root);
             if let Some(inventory_index) = inventory_index {
-                use_item(inventory_index, inventory, objects, messages);
+                use_item(tcod, inventory_index, inventory, objects, messages);
             }
             DidntTakeTurn
         }
@@ -771,7 +779,7 @@ fn handle_keys(key: Key, root: &mut Root, objects: &mut Vec<Object>, map: &Map,
 }
 
 fn main() {
-    let mut root = Root::initializer()
+    let root = Root::initializer()
         .font("arial10x10.png", FontLayout::Tcod)
         .font_type(FontType::Greyscale)
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -780,8 +788,13 @@ fn main() {
 
     tcod::system::set_fps(LIMIT_FPS);
 
-    let mut con = Offscreen::new(MAP_WIDTH, MAP_HEIGHT);
-
+    let mut tcod = Tcod {
+        root: root,
+        con: Offscreen::new(MAP_WIDTH, MAP_HEIGHT),
+        panel: Offscreen::new(SCREEN_WIDTH, SCREEN_HEIGHT),
+        fov: FovMap::new(MAP_WIDTH, MAP_HEIGHT),
+        mouse: Default::default(),
+    };
     // create the list of game messages and their color.
     let mut messages = vec![];
 
@@ -797,49 +810,45 @@ fn main() {
     // generate map (at this point it's not drawn to the screen)
     let mut map = make_map(&mut objects);
 
-    let mut fov_map = FovMap::new(MAP_WIDTH, MAP_HEIGHT);
     for y in 0..MAP_HEIGHT {
         for x in 0..MAP_WIDTH {
-            fov_map.set(x, y,
-                        !map[x as usize][y as usize].block_sight,
-                        !map[x as usize][y as usize].blocked);
+            tcod.fov.set(x, y,
+                         !map[x as usize][y as usize].block_sight,
+                         !map[x as usize][y as usize].blocked);
         }
     }
 
     let mut previous_player_position = (-1, -1);
 
-    let mut panel = Offscreen::new(SCREEN_WIDTH, PANEL_HEIGHT);
 
     // welcome message
     message(&mut messages, "Hello guys, let's play!", colors::RED);
 
-    let mut mouse = Default::default();
     let mut key = Default::default();
 
     let mut inventory = vec![];
-    while !root.window_closed() {
+    while !tcod.root.window_closed() {
         match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
-            Some((_, Event::Mouse(m))) => mouse = m,
+            Some((_, Event::Mouse(m))) => tcod.mouse = m,
             Some((_, Event::Key(k))) => key = k,
             _ => key = Default::default(),
         }
 
         let fov_recompute = previous_player_position != (objects[PLAYER].x,
                                                          objects[PLAYER].y);
-        render_all(&mut root, &mut con, &mut panel, &objects, &mut map,
-                   &mut fov_map, &mut messages, fov_recompute, mouse);
+        render_all(&mut tcod, &objects, &mut map, &mut messages, fov_recompute);
 
-        root.flush();
+        tcod.root.flush();
 
         // eralse all objects from their old location, before moving
         for object in &objects {
-            object.clear(&mut con)
+            object.clear(&mut tcod.con)
         }
 
         // handle keys and exit the game if needed
         let player = &mut objects[PLAYER];
         previous_player_position = (player.x, player.y);
-        let player_action = handle_keys(key, &mut root, &mut objects, &map,
+        let player_action = handle_keys(key, &mut tcod, &mut objects, &map,
                                         &mut inventory, &mut messages);
         if player_action == PlayerAction::Exit {
             break
@@ -849,7 +858,7 @@ fn main() {
         if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
             for id in 0..objects.len() {
                 if objects[id].ai.is_some() {
-                    ai_take_turn(id, &map, &mut objects, &fov_map, &mut messages);
+                    ai_take_turn(id, &map, &mut objects, &mut tcod.fov, &mut messages);
                 }
             }
         }
