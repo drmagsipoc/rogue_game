@@ -8,7 +8,7 @@ use tcod::map::{Map as FovMap, FovAlgorithm};
 use tcod::input::{self, Event, Key, Mouse};
 use rand::Rng;
 
-const SCREEN_WIDTH: i32= 80;
+const SCREEN_WIDTH: i32 = 80;
 const SCREEN_HEIGHT: i32 = 50;
 const LIMIT_FPS: i32 = 20;
 const MAP_WIDTH: i32 = 80;
@@ -32,6 +32,8 @@ const MSG_HEIGHT: usize = PANEL_HEIGHT as usize - 1;
 const MAX_ROOM_ITEMS: i32 = 2;
 const INVENTORY_WIDTH: i32 = 50;
 const HEAL_AMOUNT: i32 = 4;
+const LIGHTNING_DAMAGE: i32 = 5;
+const LIGHTNING_RANGE: i32 = 5;
 
 const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
 const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
@@ -49,6 +51,7 @@ struct Tcod {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Item {
     Heal,
+    Lightning,
 }
 
 enum UseResult {
@@ -75,8 +78,9 @@ fn use_item(tcod: &mut Tcod, inventory_id: usize, inventory: &mut Vec<Object>, o
     use Item::*;
     // just call the "use function" if it is defined
     if let Some(item) = inventory[inventory_id].item {
-        let on_use = match item {
+        let on_use: fn(&mut Tcod, usize, &mut [Object], &mut Messages) -> UseResult = match item {
             Heal => cast_heal,
+            Lightning => cast_lightning,
         };
         match on_use(tcod, inventory_id, objects, messages) {
             UseResult::UsedUp => {
@@ -95,7 +99,8 @@ fn use_item(tcod: &mut Tcod, inventory_id: usize, inventory: &mut Vec<Object>, o
 }
 
 // Heals the player
-fn cast_heal(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object], messages: &mut Messages) -> UseResult
+fn cast_heal(_tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
+             messages: &mut Messages) -> UseResult
 {
     if let Some(fighter) = objects[PLAYER].fighter {
         if fighter.hp == fighter.max_hp {
@@ -107,6 +112,27 @@ fn cast_heal(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object], mess
         return UseResult::UsedUp;
     }
     UseResult::Cancelled
+}
+
+// Damages nearest enemy
+fn cast_lightning(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
+                  messages: &mut Messages) -> UseResult {
+    // find the closest enemy (inside a maximum range) and damage it
+    let monster_id = closest_monster(tcod, LIGHTNING_RANGE, objects);
+    if let Some(monster_id) = monster_id {
+        // zap it!
+        message(messages,
+                format!("A lightning bolt strikes {} with a loud thunder! \
+                         The damage is {} hit points.",
+                         objects[monster_id].name, LIGHTNING_DAMAGE),
+                colors::LIGHT_BLUE);
+                objects[monster_id].take_damage(LIGHTNING_DAMAGE, messages);
+                UseResult::UsedUp
+    } else {
+        // no enemy found within maximum range
+        message(messages, "No enemy is close enough to strike.", colors::RED);
+        UseResult::Cancelled
+    }
 }
 
 type Messages = Vec<(String, Color)>;
@@ -429,6 +455,29 @@ fn ai_take_turn(monster_id: usize, map: &Map, objects: &mut [Object],
     }
 }
 
+/// find the closest enemy, up to a maximum range within player's FOV
+fn closest_monster(tcod: &Tcod, max_range: i32, objects: &mut [Object])
+        -> Option<usize> {
+    let mut closest_enemy = None;
+    // start with slightly more than maximum range
+    let mut closest_dist = (max_range + 1) as f32;
+
+    for (id, object) in objects.iter().enumerate() {
+        if (id != PLAYER) && object.fighter.is_some() && object.ai.is_some() &&
+            tcod.fov.is_in_fov(object.x, object.y)
+        {
+            // calculate the distance between the player and this object
+            let dist = objects[PLAYER].distance_to(object);
+            // it's closer. Save the enemy
+            if dist < closest_dist {
+                closest_enemy = Some(id);
+                closest_dist = dist;
+            }
+        }
+    }
+    closest_enemy
+}
+
 fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
     // choose random number of monster
     let num_monsters = rand::thread_rng().gen_range(0, MAX_ROOM_MONSTERS + 1);
@@ -451,7 +500,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             } else {
                 // create troll
                 let mut troll = Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true);
-                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0, power: 1,
+                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0, power: 2,
                                              on_death: DeathCallback::Monster});
                 troll.ai = Some(Ai);
                 troll
@@ -471,11 +520,21 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
 
         // only place the item if the tile is not blocked
         if !is_blocked(x, y, map, objects) {
-            // create healing potion
-            let mut object = Object::new(x,  y, '!', "healing potion",
-                                         colors::VIOLET, false);
-            object.item = Some(Item::Heal);
-            objects.push(object);
+            let dice = rand::random::<f32>();
+            let item = if dice < 0.7 {
+                // create healing potion (70% chance)
+                let mut object = Object::new(x, y, '!', "healing potion",
+                                            colors::VIOLET, false);
+                object.item = Some(Item::Heal);
+                object
+            } else {
+                // create a lightning bolt scroll (30% chance)
+                let mut object = Object::new(x, y, '#', "scroll of lightning",
+                                             colors::LIGHT_YELLOW, false);
+                object.item = Some(Item::Lightning);
+                object
+            };
+            objects.push(item);
         }
     }
 }
