@@ -79,6 +79,16 @@ fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, inventory: &mut Vec
     }
 }
 
+fn drop_item(inventory_id: usize,
+             inventory: &mut Vec<Object>,
+             objects: &mut Vec<Object>,
+             messages: &mut Messages) {
+    let mut item = inventory.remove(inventory_id);
+    item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
+    message(messages, format!("You dropped a {}", item.name), colors::YELLOW);
+    objects.push(item);
+}
+
 fn use_item(tcod: &mut Tcod, inventory_id: usize, inventory: &mut Vec<Object>, objects: &mut [Object],
             messages: &mut Messages, map: &mut Map) {
     use Item::*;
@@ -1007,6 +1017,17 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>, map: &mut M
                 &mut tcod.root);
             if let Some(inventory_index) = inventory_index {
                 use_item(tcod, inventory_index, inventory, objects, messages, map);
+            }
+            DidntTakeTurn
+        }
+        (Key {printable: 'd', .. }, true) => {
+            // show the inventory; if an item is selected, drop it
+            let inventory_index = inventory_menu(
+                inventory,
+                "Press the key next to an item to drop it, or any other keys to cancel.\n",
+                &mut tcod.root);
+            if let Some(inventory_index) = inventory_index {
+                drop_item(inventory_index, inventory, objects, messages);
             }
             DidntTakeTurn
         }
