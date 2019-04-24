@@ -37,7 +37,7 @@ const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_RANGE: i32 = 7;
 const CONFUSE_NUM_TURNS: i32 = 4;
 const FIREBALL_RADIUS: i32 = 3;
-const FIREBALL_DAMAGE: i32 = 4;
+const FIREBALL_DAMAGE: i32 = 5;
 
 const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
 const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
@@ -172,9 +172,11 @@ fn cast_fireball(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
 
 /// Confuses nearest enemy
 fn cast_confuse(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
-                messages: &mut Messages, _map: &mut Map) -> UseResult {
-    // find the closest enemy in range and confuse it
-    let monster_id = closest_monster(tcod, CONFUSE_RANGE, objects);
+                messages: &mut Messages, map: &mut Map) -> UseResult {
+    // ask the player for a target to confuse
+    message(messages, "Left-click an enemy to confuse it, or right-click to cancel.",
+            colors::LIGHT_CYAN);
+    let monster_id = target_monster(tcod, objects, map, messages, Some(CONFUSE_RANGE as f32));
     if let Some(monster_id) = monster_id {
         let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
         // replace the monster's AI with a confused one
@@ -929,6 +931,28 @@ fn target_tile(tcod: &mut Tcod,
         let escape = key.map_or(false, |k| k.code == Escape);
         if tcod.mouse.rbutton_pressed || escape {
             return None // cancel if the player right-clicked or pressed Esc
+        }
+    }
+}
+
+/// returns a clicked monster inside FOV up to a range, or None if right-clicked
+fn target_monster(tcod: &mut Tcod,
+                  objects: &[Object],
+                  map: &mut Map,
+                  messages: &Messages,
+                  max_range: Option<f32>)
+                  -> Option<usize> {
+    loop {
+        match target_tile(tcod, objects, map, messages, max_range) {
+            Some((x, y)) => {
+                // return the first clicked monster, otherwise continue looping
+                for (id, obj) in objects.iter().enumerate() {
+                    if obj.pos() == (x, y) && obj.fighter.is_some() && id != PLAYER {
+                        return Some(id)
+                    }
+                }
+            }
+            None => return None,
         }
     }
 }
