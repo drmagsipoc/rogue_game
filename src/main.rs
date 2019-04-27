@@ -53,6 +53,7 @@ const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
 
 const LEVEL_UP_BASE: i32 = 10;
 const LEVEL_UP_FACTOR: i32 = 15;
+const LEVEL_SCREEN_WIDTH: i32 = 40;
 
 struct Tcod {
     root: Root,
@@ -241,7 +242,30 @@ fn level_up(objects: &mut [Object], game: &mut Game, tcod: &mut Tcod) {
         game.log.add(format!("You feel more powerful! You are now level {}!",
                              player.level),
                      colors::YELLOW);
-        // TODO: increase player's stats
+        let fighter = player.fighter.as_mut().unwrap();
+        let mut choice = None;
+        while choice.is_none() {    // keep asking until a choice is made
+            choice = menu(
+                "Choose a stat to raise:\n",
+                &[format!("Vitality (+5 HP, from {}", fighter.max_hp),
+                  format!("Attack (+1 power, from {}", fighter.power),
+                  format!("Defense (+1 defense, from {}", fighter.defense)],
+                LEVEL_SCREEN_WIDTH, &mut tcod.root);
+        };
+        fighter.xp -= level_up_xp;
+        match choice.unwrap() {
+            0 => {
+                fighter.max_hp += 5;
+                fighter.hp += 5;
+            }
+            1 => {
+                fighter.power += 1;
+            }
+            2 => {
+                fighter.defense += 1;
+            }
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -1209,6 +1233,9 @@ fn play_game(objects: &mut Vec<Object>, game: &mut Game, tcod: &mut Tcod) {
         render_all(tcod, &objects, game, fov_recompute);
 
         tcod.root.flush();
+
+        // level up if needed
+        level_up(objects, game, tcod);
 
         // handle keys and exit the game if needed
         previous_player_position = objects[PLAYER].pos();
