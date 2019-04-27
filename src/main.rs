@@ -152,7 +152,7 @@ fn cast_lightning(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
                          The damage is {} hit points.",
                          objects[monster_id].name, LIGHTNING_DAMAGE),
                 colors::LIGHT_BLUE);
-                objects[monster_id].take_damage(LIGHTNING_DAMAGE, &mut game.log);
+                objects[monster_id].take_damage(LIGHTNING_DAMAGE, game);
                 UseResult::UsedUp
     } else {
         // no enemy found within maximum range
@@ -181,7 +181,7 @@ fn cast_fireball(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
             message(&mut game.log,
                     format!("The {} gets burned for {} hit points.", obj.name, FIREBALL_DAMAGE),
                     colors::ORANGE);
-            obj.take_damage(FIREBALL_DAMAGE, &mut game.log);
+            obj.take_damage(FIREBALL_DAMAGE, game);
         }
     }
 
@@ -341,29 +341,29 @@ enum DeathCallback {
 }
 
 impl DeathCallback {
-    fn callback(self, object: &mut Object, messages: &mut Messages) {
+    fn callback(self, object: &mut Object, game: &mut Game) {
         use DeathCallback::*;
-        let callback: fn(&mut Object, &mut Messages) = match self {
+        let callback: fn(&mut Object, &mut Game) = match self {
             Player => player_death,
             Monster => monster_death,
         };
-        callback(object, messages);
+        callback(object, game);
     }
 }
 
-fn player_death(player: &mut Object, messages: &mut Messages) {
+fn player_death(player: &mut Object, game: &mut Game) {
     // the game has ended!
-    message(messages, "You died!", colors::WHITE);
+    message(&mut game.log, "You died!", colors::WHITE);
 
     // transform player into a corpse!
     player.char = '%';
     player.color = colors::DARK_RED;
 }
 
-fn monster_death(monster: &mut Object, messages: &mut Messages) {
+fn monster_death(monster: &mut Object, game: &mut Game) {
     // transform into a corpse. It doesn't block, can be attacked and doesn't
     // move
-    message(messages, format!("{} is dead!", monster.name), colors::GREEN);
+    message(&mut game.log, format!("{} is dead!", monster.name), colors::GREEN);
     monster.char = '%';
     monster.color = colors::DARK_RED;
     monster.blocks = false;
@@ -435,7 +435,7 @@ impl Object {
         ((dx.pow(2) + dy.pow(2)) as f32).sqrt()
     }
 
-    pub fn take_damage(&mut self, damage: i32, messages: &mut Messages) {
+    pub fn take_damage(&mut self, damage: i32, game: &mut Game) {
         // apply damage if possible
         if let Some(fighter) = self.fighter.as_mut() {
             if damage > 0 {
@@ -446,21 +446,21 @@ impl Object {
         if let Some(fighter) = self.fighter {
             if fighter.hp <= 0 {
                 self.alive = false;
-                fighter.on_death.callback(self, messages);
+                fighter.on_death.callback(self, game);
             }
         }
     }
 
-    pub fn attack(&mut self, target: &mut Object, messages: &mut Messages) {
+    pub fn attack(&mut self, target: &mut Object, game: &mut Game) {
         // simple attack formula
         let damage = self.fighter.map_or(0, |f| f.power) - target.fighter.map_or(0, |f| f.defense);
         if damage > 0 {
             // make the target take some damage
-            message(messages, format!("{} attacks {} for {} hit points.",
+            message(&mut game.log, format!("{} attacks {} for {} hit points.",
                     self.name, target.name, damage), colors::WHITE);
-            target.take_damage(damage, messages);
+            target.take_damage(damage, game);
         } else {
-            message(messages, format!("{} attacks {} but it has no effect!",
+            message(&mut game.log, format!("{} attacks {} but it has no effect!",
                     self.name, target.name), colors::WHITE);
         }
     }
@@ -518,7 +518,7 @@ fn player_move_or_attack(dx: i32, dy: i32, game: &mut Game,
     match target_id {
         Some(target_id) => {
             let (player, target) = mut_two(PLAYER, target_id, objects);
-            player.attack(target, &mut game.log);
+            player.attack(target, game);
         }
         None => {
             move_by(PLAYER, dx, dy, game, objects);
@@ -551,8 +551,7 @@ fn ai_basic(monster_id: usize, game: &mut Game, objects: &mut [Object],
         } else if objects[PLAYER].fighter.map_or(false, |f| f.hp > 0) {
             // close enough to attack! (if the player is still alive.)
             let (monster, player) = mut_two(monster_id, PLAYER, objects);
-            monster.attack(player, &mut game.log);
-
+            monster.attack(player, game);
         }
     }
     Ai::Basic
