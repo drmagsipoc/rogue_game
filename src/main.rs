@@ -727,6 +727,15 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
     // choose random number of items
     let num_items = rand::thread_rng().gen_range(0, MAX_ROOM_ITEMS + 1);
 
+    // item random table
+    let item_chances = &mut [
+        Weighted {weight: 7, item: Item::Heal},
+        Weighted {weight: 1, item: Item::Lightning},
+        Weighted {weight: 1, item: Item::Fireball},
+        Weighted {weight: 1, item: Item::Confusion},
+    ];
+    let item_choice = WeightedChoice::new(item_chances);
+
     for _ in 0..num_items {
         // choose random spot for this item
         let x = rand::thread_rng().gen_range(room.x1 + 1, room.x2);
@@ -734,31 +743,35 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
 
         // only place the item if the tile is not blocked
         if !is_blocked(x, y, map, objects) {
-            let dice = rand::random::<f32>();
-            let mut item = if dice < 0.4 {
-                // create healing potion (40% chance)
-                let mut object = Object::new(x, y, '!', "healing potion",
-                                            colors::VIOLET, false);
-                object.item = Some(Item::Heal);
-                object
-            } else if dice < 0.4 + 0.2 {
-                // create a lightning bolt scroll (20% chance)
-                let mut object = Object::new(x, y, '#', "scroll of lightning",
-                                             colors::LIGHT_YELLOW, false);
-                object.item = Some(Item::Lightning);
-                object
-            } else if dice < 0.4 + 0.2 + 0.2 {
-                // create a fireball scroll (20% chance)
-                let mut object = Object::new(x, y, 'F', "scroll of fireball",
-                                             colors::LIGHT_YELLOW, false);
-                object.item = Some(Item::Fireball);
-                object
-            } else {
-                // create a confusion scroll (20% chance)
-                let mut object = Object::new(x, y, 'C', "scroll of confusion",
-                                             colors::ORANGE, false);
-                object.item = Some(Item::Confusion);
-                object
+            let mut item = match item_choice.ind_sample(&mut rand::thread_rng()) {
+                Item::Heal => {
+                    // create healing potion (40% chance)
+                    let mut object = Object::new(x, y, '!', "healing potion",
+                                                colors::VIOLET, false);
+                    object.item = Some(Item::Heal);
+                    object
+                }
+                Item::Lightning => {
+                    // create a lightning bolt scroll (20% chance)
+                    let mut object = Object::new(x, y, '#', "scroll of lightning",
+                                                colors::LIGHT_YELLOW, false);
+                    object.item = Some(Item::Lightning);
+                    object
+                }
+                Item::Fireball => {
+                    // create a fireball scroll (20% chance)
+                    let mut object = Object::new(x, y, 'F', "scroll of fireball",
+                                                colors::LIGHT_YELLOW, false);
+                    object.item = Some(Item::Fireball);
+                    object
+                }
+                Item::Confusion => {
+                    // create a confusion scroll (20% chance)
+                    let mut object = Object::new(x, y, 'C', "scroll of confusion",
+                                                colors::ORANGE, false);
+                    object.item = Some(Item::Confusion);
+                    object
+                }
             };
             item.always_visible = true;
             objects.push(item);
