@@ -51,6 +51,9 @@ const COLOR_LIGHT_WALL: Color = Color { r: 130, g: 110, b: 50 };
 const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
 
+const LEVEL_UP_BASE: i32 = 10;
+const LEVEL_UP_FACTOR: i32 = 15;
+
 struct Tcod {
     root: Root,
     con: Offscreen,
@@ -158,7 +161,9 @@ fn cast_lightning(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
                               The damage is {} hit points.",
                               objects[monster_id].name, LIGHTNING_DAMAGE),
                      colors::LIGHT_BLUE);
-        objects[monster_id].take_damage(LIGHTNING_DAMAGE, game);
+        if let Some(xp) = objects[monster_id].take_damage(LIGHTNING_DAMAGE, game) {
+            objects[PLAYER].fighter.as_mut().unwrap().xp += xp;
+        }
         UseResult::UsedUp
     } else {
         // no enemy found within maximum range
@@ -180,14 +185,22 @@ fn cast_fireball(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
                           FIREBALL_RADIUS),
                  colors::ORANGE);
 
-    for obj in objects {
-        if obj.distance(x, y) <= FIREBALL_RADIUS as f32 && obj.fighter.is_some() {
+    let mut xp_to_gain = 0;
+    for (id, obj) in objects.iter_mut().enumerate() {
+        if    obj.distance(x, y) <= FIREBALL_RADIUS as f32
+           && obj.fighter.is_some() {
             game.log.add(format!("The {} gets burned for {} hit points.",
                                   obj.name, FIREBALL_DAMAGE),
                          colors::ORANGE);
-            obj.take_damage(FIREBALL_DAMAGE, game);
+            if let Some(xp) = obj.take_damage(FIREBALL_DAMAGE, game) {
+                // Don't reward the player for burning themself
+                if id != PLAYER {
+                    xp_to_gain += xp;
+                }
+            }
         }
     }
+    objects[PLAYER].fighter.as_mut().unwrap().xp += xp_to_gain;
 
     UseResult::UsedUp
 }
@@ -214,6 +227,21 @@ fn cast_confuse(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
     } else {    // no enemy found within maximum range
         game.log.add("No enemy is close enough", colors::RED);
         UseResult::Cancelled
+    }
+}
+
+fn level_up(objects: &mut [Object], game: &mut Game, tcod: &mut Tcod) {
+    let player = &mut objects[PLAYER];
+    let level_up_xp = LEVEL_UP_BASE + player.level * LEVEL_UP_FACTOR;
+
+    // see if the player's experience is enough to level up
+    if player.fighter.as_ref().map_or(0, |f| f.xp) >= level_up_xp {
+        // level up if it is
+        player.level += 1;
+        game.log.add(format!("You feel more powerful! You are now level {}!",
+                             player.level),
+                     colors::YELLOW);
+        // TODO: increase player's stats
     }
 }
 
@@ -346,6 +374,7 @@ struct Fighter {
     hp: i32,
     defense: i32,
     power: i32,
+    xp: i32,
     on_death: DeathCallback,
 }
 
@@ -407,6 +436,7 @@ struct Object {
     ai: Option<Ai>,
     item: Option<Item>,
     always_visible: bool,
+    level: i32,
 }
 
 impl Object {
@@ -432,6 +462,7 @@ impl Object {
             ai: None,
             item: None,
             always_visible: false,
+            level: 1,
         }
     }
 
@@ -448,7 +479,7 @@ impl Object {
         ((dx.pow(2) + dy.pow(2)) as f32).sqrt()
     }
 
-    pub fn take_damage(&mut self, damage: i32, game: &mut Game) {
+    pub fn take_damage(&mut self, damage: i32, game: &mut Game) -> Option<i32> {
         // apply damage if possible
         if let Some(fighter) = self.fighter.as_mut() {
             if damage > 0 {
@@ -460,18 +491,24 @@ impl Object {
             if fighter.hp <= 0 {
                 self.alive = false;
                 fighter.on_death.callback(self, game);
+                return Some(fighter.xp);
             }
         }
+        None
     }
 
     pub fn attack(&mut self, target: &mut Object, game: &mut Game) {
         // simple attack formula
-        let damage = self.fighter.map_or(0, |f| f.power) - target.fighter.map_or(0, |f| f.defense);
+        let damage =   self.fighter.map_or(0, |f| f.power)
+                     - target.fighter.map_or(0, |f| f.defense);
         if damage > 0 {
             // make the target take some damage
             game.log.add(format!("{} attacks {} for {} hit points.",
                     self.name, target.name, damage), colors::WHITE);
-            target.take_damage(damage, game);
+            if let Some(xp) = target.take_damage(damage, game) {
+                // yield experience to the player
+                self.fighter.as_mut().unwrap().xp += xp;
+            }
         } else {
             game.log.add(format!("{} attacks {} but it has no effect!",
                     self.name, target.name), colors::WHITE);
@@ -628,14 +665,16 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             let mut monster = if rand::random::<f32>() < 0.8 {  // 80% chance to create an orc
                 // create orc
                 let mut orc = Object::new(x, y, 'o', "orc", colors::DESATURATED_GREEN, true);
-                orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0, power: 2,
+                orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0,
+                                           power: 2, xp: 2,
                                            on_death: DeathCallback::Monster});
                 orc.ai = Some(Ai::Basic);
                 orc
             } else {
                 // create troll
                 let mut troll = Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true);
-                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0, power: 2,
+                troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0,
+                                             power: 2, xp: 3,
                                              on_death: DeathCallback::Monster});
                 troll.ai = Some(Ai::Basic);
                 troll
@@ -1115,7 +1154,7 @@ fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
     let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
     player.alive = true;
     player.fighter = Some(Fighter{max_hp: 8, hp: 8, defense: 1, power: 2,
-                                  on_death: DeathCallback::Player});
+                                  xp: 0, on_death: DeathCallback::Player});
 
     // objects list currently populated only by player
     let mut objects = vec![player];
