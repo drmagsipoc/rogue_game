@@ -64,6 +64,7 @@ struct Game {
     map: Map,
     log: Messages,
     inventory: Vec<Object>,
+    dungeon_level: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -290,6 +291,11 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             // "paint" it to the map's tiles
             create_room(new_room, &mut map);
 
+            //Player is the first element, remove everything else.
+            // Note: works only when the player is the first object!
+            assert_eq!(&objects[PLAYER] as *const _, &objects[0] as * const _);
+            objects.truncate(1);
+
             // add some content to this room, such as monsters
             place_objects(new_room, &map, objects);
 
@@ -322,6 +328,12 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
             rooms.push(new_room);
         }
     }
+    // create stairs at the center of the last room
+    let (last_room_x, last_room_y) = rooms[rooms.len() -1].center();
+    let mut stairs = Object::new(last_room_x, last_room_y, '<', "stairs",
+                                 colors::WHITE, false);
+    stairs.always_visible = true;
+    objects.push(stairs);
 
     map
 }
@@ -393,6 +405,7 @@ struct Object {
     fighter: Option<Fighter>,
     ai: Option<Ai>,
     item: Option<Item>,
+    always_visible: bool,
 }
 
 impl Object {
@@ -417,6 +430,7 @@ impl Object {
             fighter: None,
             ai: None,
             item: None,
+            always_visible: false,
         }
     }
 
@@ -641,7 +655,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
         // only place the item if the tile is not blocked
         if !is_blocked(x, y, map, objects) {
             let dice = rand::random::<f32>();
-            let item = if dice < 0.4 {
+            let mut item = if dice < 0.4 {
                 // create healing potion (40% chance)
                 let mut object = Object::new(x, y, '!', "healing potion",
                                             colors::VIOLET, false);
@@ -666,6 +680,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 object.item = Some(Item::Confusion);
                 object
             };
+            item.always_visible = true;
             objects.push(item);
         }
     }
@@ -714,6 +729,20 @@ fn create_v_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map) {
     for y in cmp::min(y1, y2)..(cmp::max(y1, y2) + 1) {
         map[x as usize][y as usize] = Tile::empty();
     }
+}
+
+/// Advance to the next level
+fn next_level(tcod: &mut Tcod, objects: &mut Vec<Object>, game: &mut Game) {
+    game.log.add("Entered a safezone on the stairs, you recovered some health",
+                  colors::VIOLET);
+    let heal_hp = objects[PLAYER].fighter.map_or(0, |f| f.max_hp / 2);
+    objects[PLAYER].heal(heal_hp);
+
+    game.log.add("Leaving the safezone, you are now in a new level.",
+                 colors::RED);
+    game.dungeon_level += 1;
+    game.map = make_map(objects);
+    initialize_fov(&game.map, tcod);
 }
 
 fn is_blocked(x: i32, y: i32, map: &Map, objects: &[Object]) -> bool {
@@ -858,7 +887,12 @@ fn render_all(tcod: &mut Tcod, objects: &[Object], game: &mut Game,
         }
     }
 
-    let mut to_draw: Vec<_> = objects.iter().filter(|o| tcod.fov.is_in_fov(o.x, o.y)).collect();
+    let mut to_draw: Vec<_> = objects.iter()
+                                .filter(|o| {
+                                    tcod.fov.is_in_fov(o.x, o.y) ||
+                                    (    o.always_visible
+                                      && game.map[o.x as usize][o.y as usize].explored)
+                                }).collect();
     // sort so that non-blocking objects come first
     to_draw.sort_by(|o1, o2| { o1.blocks.cmp(&o2.blocks) });
     // draw the objects in the list
@@ -899,6 +933,9 @@ fn render_all(tcod: &mut Tcod, objects: &[Object], game: &mut Game,
     // blit contents of "con" to root console and present it
     blit(&mut tcod.panel, (0, 0), (SCREEN_WIDTH, PANEL_HEIGHT), &mut tcod.root,
          (0, PANEL_Y), 1.0, 1.0);
+
+    tcod.panel.print_ex(1, 3, BackgroundFlag::None, TextAlignment::Left,
+                        format!("Dungeon level: {}", game.dungeon_level));
 }
 
 /// return a string with names of all objects under the mouse
@@ -1041,6 +1078,16 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>,
             }
             DidntTakeTurn
         }
+        (Key { printable: '<', .. }, true) => {
+            // go down the stairs, if the player is on them
+            let player_on_stairs = objects.iter().any(|object| {
+                object.pos() == objects[PLAYER].pos() && object.name == "stairs"
+            });
+            if player_on_stairs {
+                next_level(tcod, objects, game);
+            }
+            DidntTakeTurn
+        }
         _ => DidntTakeTurn,
     }
 }
@@ -1076,6 +1123,7 @@ fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
         map: make_map(&mut objects),
         log: vec![],
         inventory: vec![],
+        dungeon_level: 1,
     };
 
     initialize_fov(&game.map, tcod);
