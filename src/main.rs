@@ -417,11 +417,6 @@ impl Object {
         con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
     }
 
-    /// Erase the character that represents this object
-    pub fn clear(&self, con: &mut Console) {
-        con.put_char(self.x, self.y, ' ', BackgroundFlag::None);
-    }
-
     /// return the distance to another object
     pub fn distance_to(&self, other: &Object) -> f32 {
         let dx = other.x - self.x;
@@ -1036,6 +1031,81 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>,
     }
 }
 
+fn initialize_fov(map: &Map, tcod: &mut Tcod) {
+    // create the Fov map, according to the generated map
+    for y in 0..MAP_HEIGHT {
+        for x in 0..MAP_WIDTH {
+            tcod.fov.set(x, y,
+                         !map[x as usize][y as usize].block_sight,
+                         !map[x as usize][y as usize].blocked);
+        }
+    }
+}
+
+fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
+    // create object representing the player
+    let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
+    player.alive = true;
+    player.fighter = Some(Fighter{max_hp: 8, hp: 8, defense: 1, power: 2,
+                                  on_death: DeathCallback::Player});
+
+    // objects list for player
+    let mut objects = vec![player];
+
+    let mut game = Game {
+        map: make_map(&mut objects),
+        log: vec![],
+        inventory: vec![],
+    };
+
+    initialize_fov(&game.map, tcod);
+
+    // welcome message
+    game.log.add("Hi! Tuloy po kayo", colors::RED);
+
+    (objects, game)
+}
+
+fn play_game(objects: &mut Vec<Object>, game: &mut Game, tcod: &mut Tcod) {
+    // force FOV "recompute" first time through the game loop
+    let mut previous_player_position = (-1, -1);
+
+    let mut key = Default::default();
+
+    while !tcod.root.window_closed() {
+        // clear the screen of the previous frame
+        tcod.con.clear();
+
+        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
+            Some((_, Event::Mouse(m))) => tcod.mouse = m,
+            Some((_, Event::Key(k))) => key = k,
+            _ => key = Default::default(),
+        }
+
+        let fov_recompute = previous_player_position != (objects[PLAYER].x,
+                                                         objects[PLAYER].y);
+        render_all(tcod, &objects, game, fov_recompute);
+
+        tcod.root.flush();
+
+        // handle keys and exit the game if needed
+        previous_player_position = objects[PLAYER].pos();
+        let player_action = handle_keys(key, tcod, objects, game);
+        if player_action == PlayerAction::Exit {
+            break
+        }
+
+        // let monsters take their turn
+        if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
+            for id in 0..objects.len() {
+                if objects[id].ai.is_some() {
+                    ai_take_turn(id, game, objects, &tcod.fov);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     let root = Root::initializer()
         .font("arial10x10.png", FontLayout::Tcod)
@@ -1054,71 +1124,6 @@ fn main() {
         mouse: Default::default(),
     };
 
-    // creation of objects
-    let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
-    player.fighter = Some(Fighter{max_hp: 8, hp: 8, defense: 1, power: 2,
-                                  on_death: DeathCallback::Player});
-    player.alive = true;
-
-    // objects list
-    let mut objects = vec![player];
-
-    let mut game = Game {
-        map: make_map(&mut objects),
-        log: vec![],
-        inventory: vec![],
-    };
-
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            tcod.fov.set(x, y,
-                         !game.map[x as usize][y as usize].block_sight,
-                         !game.map[x as usize][y as usize].blocked);
-        }
-    }
-
-    let mut previous_player_position = (-1, -1);
-
-
-    // welcome message
-    game.log.add("Hello guys, let's play!", colors::RED);
-
-    let mut key = Default::default();
-
-    while !tcod.root.window_closed() {
-        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
-            Some((_, Event::Mouse(m))) => tcod.mouse = m,
-            Some((_, Event::Key(k))) => key = k,
-            _ => key = Default::default(),
-        }
-
-        let fov_recompute = previous_player_position != (objects[PLAYER].x,
-                                                         objects[PLAYER].y);
-        render_all(&mut tcod, &objects, &mut game, fov_recompute);
-
-        tcod.root.flush();
-
-        // eralse all objects from their old location, before moving
-        for object in &objects {
-            object.clear(&mut tcod.con)
-        }
-
-        // handle keys and exit the game if needed
-        let player = &mut objects[PLAYER];
-        previous_player_position = (player.x, player.y);
-        let player_action = handle_keys(key, &mut tcod, &mut objects,
-                                        &mut game);
-        if player_action == PlayerAction::Exit {
-            break
-        }
-
-        // let monsters take their turn
-        if objects[PLAYER].alive && player_action != PlayerAction::DidntTakeTurn {
-            for id in 0..objects.len() {
-                if objects[id].ai.is_some() {
-                    ai_take_turn(id, &mut game, &mut objects, &mut tcod.fov);
-                }
-            }
-        }
-    }
+    let (mut objects, mut game) = new_game(&mut tcod);
+    play_game(&mut objects, &mut game, &mut tcod);
 }
