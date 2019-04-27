@@ -271,6 +271,12 @@ type Map = Vec<Vec<Tile>>;
 /// fill map with "blocked" tiles
 fn make_map(objects: &mut Vec<Object>) -> Map {
     let mut map = vec![vec![Tile::wall(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
+
+    //Player is the first element, remove everything else.
+    // Note: works only when the player is the first object!
+    assert_eq!(&objects[PLAYER] as *const _, &objects[0] as * const _);
+    objects.truncate(1);
+
     let mut rooms = vec![];
 
     for _ in 0..MAX_ROOMS {
@@ -290,11 +296,6 @@ fn make_map(objects: &mut Vec<Object>) -> Map {
 
             // "paint" it to the map's tiles
             create_room(new_room, &mut map);
-
-            //Player is the first element, remove everything else.
-            // Note: works only when the player is the first object!
-            assert_eq!(&objects[PLAYER] as *const _, &objects[0] as * const _);
-            objects.truncate(1);
 
             // add some content to this room, such as monsters
             place_objects(new_room, &map, objects);
