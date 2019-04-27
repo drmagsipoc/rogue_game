@@ -52,8 +52,9 @@ const COLOR_DARK_GROUND: Color = Color { r: 50, g: 50, b: 150 };
 const COLOR_LIGHT_GROUND: Color = Color { r: 200, g: 180, b: 50 };
 
 const LEVEL_UP_BASE: i32 = 10;
-const LEVEL_UP_FACTOR: i32 = 15;
+const LEVEL_UP_FACTOR: i32 = 5;
 const LEVEL_SCREEN_WIDTH: i32 = 40;
+const CHARACTER_SCREEN_WIDTH: i32 = 30;
 
 struct Tcod {
     root: Root,
@@ -431,7 +432,9 @@ fn player_death(player: &mut Object, game: &mut Game) {
 fn monster_death(monster: &mut Object, game: &mut Game) {
     // transform into a corpse. It doesn't block, can be attacked and doesn't
     // move
-    game.log.add(format!("{} is dead!", monster.name), colors::GREEN);
+    game.log.add(
+        format!("{} is dead! You gain {} experience points",
+                monster.name, monster.fighter.unwrap().xp), colors::GREEN);
     monster.char = '%';
     monster.color = colors::DARK_RED;
     monster.blocks = false;
@@ -1129,6 +1132,29 @@ fn handle_keys(key: Key, tcod: &mut Tcod, objects: &mut Vec<Object>,
             if let Some(inventory_index) = inventory_index {
                 use_item(tcod, inventory_index, game, objects);
             }
+            DidntTakeTurn
+        }
+        (Key { printable: 'c', .. }, true) => {
+            // show character infommation
+            let player = &objects[PLAYER];
+            let level = player.level;
+            let level_up_xp = LEVEL_UP_BASE + player.level * LEVEL_UP_FACTOR;
+            if let Some(fighter) = player.fighter.as_ref() {
+                let msg = format!("Character information
+
+Level: {}
+Experience: {}
+Experience to next level: {}
+
+Maximum HP: {}
+Power: {}
+Defense: {}",
+                                   level, fighter.xp, level_up_xp,
+                                   fighter.max_hp, fighter.power,
+                                   fighter.defense);
+                msgbox(&msg, CHARACTER_SCREEN_WIDTH, &mut tcod.root);
+            }
+
             DidntTakeTurn
         }
         (Key {printable: 'd', .. }, true) => {
