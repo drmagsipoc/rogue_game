@@ -677,7 +677,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
             } else {
                 // create a confusion scroll (20% chance)
                 let mut object = Object::new(x, y, 'C', "scroll of confusion",
-                                             colors::LIGHT_ORANGE, false);
+                                             colors::ORANGE, false);
                 object.item = Some(Item::Confusion);
                 object
             };
