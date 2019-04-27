@@ -475,7 +475,7 @@ impl Object {
 
     /// returns the distance fromm some coordinates
     pub fn distance(&self, x: i32, y: i32) -> f32  {
-        (((x - self.x).pow(2) + (y - self.x).pow(2)) as f32).sqrt()
+        (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
     }
 }
 
