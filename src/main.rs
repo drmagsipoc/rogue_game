@@ -79,7 +79,7 @@ enum Slot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-/// An object that can be equiped, yielding bonus
+/// An object that can be equipped, yielding bonus
 struct Equipment {
     slot: Slot,
     equipped: bool,
@@ -110,7 +110,16 @@ fn pick_item_up(object_id: usize, objects: &mut Vec<Object>, game: &mut Game) {
         let item = objects.swap_remove(object_id);
         game.log.add(format!("You picked up {}!", item.name),
                      colors::GREEN);
+        let index = game.inventory.len();
+        let slot = item.equipment.map(|e| e.slot);
         game.inventory.push(item);
+
+        // auto equip item if slot is empty
+        if let Some(slot) = slot {
+            if get_equipped_in_slot(slot, &game.inventory).is_none() {
+                game.inventory[index].equip(&mut game.log);
+            }
+        }
     }
 }
 
@@ -118,6 +127,9 @@ fn drop_item(inventory_id: usize,
              game: &mut Game,
              objects: &mut Vec<Object>) {
     let mut item = game.inventory.remove(inventory_id);
+    if item.equipment.is_some() {
+        item.dequip(&mut game.log);
+    }
     item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
     game.log.add(format!("You dropped a {}", item.name),
                  colors::YELLOW);
@@ -259,9 +271,23 @@ fn toggle_equipment(_tcod: &mut Tcod, inventory_id: usize,
     if equipment.equipped {
         game.inventory[inventory_id].dequip(&mut game.log);
     } else {
+        // if the slot is already being used, dequip it first
+        if let Some(old_equipment) = get_equipped_in_slot(equipment.slot,
+                                                          &game.inventory) {
+            game.inventory[old_equipment].dequip(&mut game.log);
+        }
         game.inventory[inventory_id].equip(&mut game.log);
     }
     UseResult::UsedAndKept
+}
+
+fn get_equipped_in_slot(slot: Slot, inventory: &[Object]) -> Option<usize> {
+    for (inventory_id, item) in inventory.iter().enumerate() {
+        if item.equipment.as_ref().map_or(false, |e| e.equipped && e.slot == slot) {
+            return Some(inventory_id)
+        }
+    }
+    None
 }
 
 struct Transition {
@@ -1048,7 +1074,15 @@ fn inventory_menu(inventory: &[Object], header: &str, root: &mut Root) -> Option
     let options = if inventory.len() == 0 {
         vec!["Intenvtory is empty.".into()]
     } else {
-        inventory.iter().map(|item| { item.name.clone() }).collect()
+        inventory.iter().map(|item| {
+            // show additional information, for equipments.
+            match item.equipment {
+                Some(equipment) if equipment.equipped => {
+                    format!("{} (on {:?}", item.name, equipment.slot)
+                }
+            _ => item.name.clone()
+            }
+        }).collect()
     };
 
     let inventory_index = menu(header, &options, INVENTORY_WIDTH, root);
