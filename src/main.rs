@@ -1044,7 +1044,7 @@ fn render_bar(panel: &mut Offscreen,
     }
 
     // add centered text with values
-    panel.set_default_background(colors::WHITE);
+    panel.set_default_foreground(colors::WHITE);
     panel.print_ex(x + total_width / 2, y, BackgroundFlag::None, TextAlignment::Center,
                    &format!("{}: {}/{}", name, value, maximum));
 }
