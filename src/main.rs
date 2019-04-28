@@ -93,6 +93,7 @@ impl std::fmt::Display for Slot {
 struct Equipment {
     slot: Slot,
     equipped: bool,
+    power_bonus: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -331,7 +332,7 @@ fn level_up(objects: &mut [Object], game: &mut Game, tcod: &mut Tcod) {
             choice = menu(
                 "Choose a stat to raise:\n",
                 &[format!("Vitality (+5 HP, from {}", fighter.max_hp),
-                  format!("Attack (+1 power, from {}", fighter.power),
+                  format!("Attack (+1 power, from {}", fighter.base_power),
                   format!("Defense (+1 defense, from {}", fighter.defense)],
                 LEVEL_SCREEN_WIDTH, &mut tcod.root);
         };
@@ -342,7 +343,7 @@ fn level_up(objects: &mut [Object], game: &mut Game, tcod: &mut Tcod) {
                 fighter.hp += 5;
             }
             1 => {
-                fighter.power += 1;
+                fighter.base_power += 1;
             }
             2 => {
                 fighter.defense += 1;
@@ -480,7 +481,7 @@ struct Fighter {
     max_hp: i32,
     hp: i32,
     defense: i32,
-    power: i32,
+    base_power: i32,
     xp: i32,
     on_death: DeathCallback,
 }
@@ -608,14 +609,19 @@ impl Object {
         None
     }
 
+    pub fn power(&self, game: &Game) -> i32 {
+        let base_power = self.fighter.map_or(0, |f| f.base_power);
+        let  bonus: i32 = self.get_all_equipped(game).iter().map(|e| e.power_bonus).sum();
+        base_power + bonus
+    }
+
     pub fn attack(&mut self, target: &mut Object, game: &mut Game) {
         // simple attack formula
-        let damage =   self.fighter.map_or(0, |f| f.power)
-                     - target.fighter.map_or(0, |f| f.defense);
+        let damage = self.power(game) - target.fighter.map_or(0, |f| f.defense);
         if damage > 0 {
             // make the target take some damage
             game.log.add(format!("{} attacks {} for {} hit points.",
-                    self.name, target.name, damage), colors::WHITE);
+                         self.name, target.name, damage), colors::WHITE);
             if let Some(xp) = target.take_damage(damage, game) {
                 // yield experience to the player
                 self.fighter.as_mut().unwrap().xp += xp;
@@ -676,6 +682,21 @@ impl Object {
         } else {
             log.add(format!("Can't dequip {:?}. Not an equipment.", self.name),
                     colors::RED);
+        }
+    }
+
+    /// returns a list of equipped items
+    pub fn get_all_equipped(&self, game: &Game) -> Vec<Equipment> {
+        if self.name == "player" {
+            game.inventory
+                .iter()
+                .filter(|item| {
+                    item.equipment.map_or(false, |e| e.equipped)
+                })
+                .map(|item| item.equipment.unwrap())
+                .collect()
+        } else {
+            vec![]
         }
     }
 }
@@ -834,8 +855,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     // create orc
                     let mut orc = Object::new(x, y, 'o', "orc", colors::DESATURATED_GREEN, true);
                     orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0,
-                                            power: 2, xp: 2,
-                                            on_death: DeathCallback::Monster});
+                                               base_power: 4, xp: 2,
+                                               on_death: DeathCallback::Monster});
                     orc.ai = Some(Ai::Basic);
                     orc
                 }
@@ -843,8 +864,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     // create troll
                     let mut troll = Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true);
                     troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0,
-                                                power: 2, xp: 3,
-                                                on_death: DeathCallback::Monster});
+                                                 base_power: 4, xp: 3,
+                                                 on_death: DeathCallback::Monster});
                     troll.ai = Some(Ai::Basic);
                     troll
                 }
@@ -918,7 +939,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     let mut object = Object::new(x, y, '/', "sword", colors::SKY, false);
                     object.item = Some(Item::Equipment);
                     object.equipment = Some(Equipment{equipped: false,
-                                                      slot: Slot::RightHand});
+                                                      slot: Slot::RightHand,
+                                                      power_bonus: 0});
                     object
                 }
             };
@@ -1353,7 +1375,7 @@ Maximum HP: {}
 Power: {}
 Defense: {}",
                                    level, fighter.xp, level_up_xp,
-                                   fighter.max_hp, fighter.power,
+                                   fighter.max_hp, fighter.base_power,
                                    fighter.defense);
                 msgbox(&msg, CHARACTER_SCREEN_WIDTH, &mut tcod.root);
             }
@@ -1406,7 +1428,7 @@ fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
     // create object representing the player
     let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
     player.alive = true;
-    player.fighter = Some(Fighter{max_hp: 8, hp: 8, defense: 1, power: 2,
+    player.fighter = Some(Fighter{max_hp: 15, hp: 15, defense: 0, base_power: 2,
                                   xp: 0, on_death: DeathCallback::Player});
 
     // objects list currently populated only by player
