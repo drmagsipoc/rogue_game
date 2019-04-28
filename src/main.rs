@@ -72,15 +72,31 @@ struct Game {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+enum Slot {
+    LeftHand,
+    RightHand,
+    Head,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// An object that can be equiped, yielding bonus
+struct Equipment {
+    slot: Slot,
+    equipped: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 enum Item {
     Heal,
     Lightning,
     Fireball,
     Confusion,
+    Equipment,
 }
 
 enum UseResult {
     UsedUp,
+    UsedAndKept,
     Cancelled,
 }
 
@@ -118,12 +134,14 @@ fn use_item(tcod: &mut Tcod, inventory_id: usize, game: &mut Game, objects:
             Lightning => cast_lightning,
             Fireball => cast_fireball,
             Confusion => cast_confuse,
+            Equipment => toggle_equipment,
         };
         match on_use(tcod, inventory_id, objects, game) {
             UseResult::UsedUp => {
                 // destroy after use, unless it was cancelled for some reason
                 game.inventory.remove(inventory_id);
             }
+            UseResult::UsedAndKept => {}, // do nothing
             UseResult::Cancelled => {
                 game.log.add("Cancelled", colors::WHITE);
             }
@@ -229,6 +247,21 @@ fn cast_confuse(tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
         game.log.add("No enemy is close enough", colors::RED);
         UseResult::Cancelled
     }
+}
+
+fn toggle_equipment(_tcod: &mut Tcod, inventory_id: usize,
+                     _objects: &mut [Object], game: &mut Game) -> UseResult
+{
+    let equipment = match game.inventory[inventory_id].equipment {
+        Some(equipment) => equipment,
+        None => return UseResult::Cancelled,
+    };
+    if equipment.equipped {
+        game.inventory[inventory_id].dequip(&mut game.log);
+    } else {
+        game.inventory[inventory_id].equip(&mut game.log);
+    }
+    UseResult::UsedAndKept
 }
 
 struct Transition {
@@ -475,6 +508,7 @@ struct Object {
     fighter: Option<Fighter>,
     ai: Option<Ai>,
     item: Option<Item>,
+    equipment: Option<Equipment>,
     always_visible: bool,
     level: i32,
 }
@@ -501,6 +535,7 @@ impl Object {
             fighter: None,
             ai: None,
             item: None,
+            equipment: None,
             always_visible: false,
             level: 1,
         }
@@ -568,6 +603,44 @@ impl Object {
     /// returns the distance fromm some coordinates
     pub fn distance(&self, x: i32, y: i32) -> f32  {
         (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
+    }
+
+    /// Equip object and show a message about it
+    pub fn equip (&mut self, log: &mut Vec<(String, Color)>) {
+        if self.item.is_none() {
+            log.add(format!("Can't equip {:?} because it's not an Item.", self.name),
+                    colors::RED);
+            return
+        };
+        if let Some(ref mut equipment) = self.equipment {
+            if !equipment.equipped {
+                equipment.equipped = true;
+                log.add(format!("Equipped {} on {:?}.", self.name, equipment.slot),
+                        colors::LIGHT_GREEN);
+            }
+        } else {
+            log.add(format!("Can't equip {:?}. Not an equipment.", self.name),
+                            colors::RED);
+        }
+    }
+
+    /// Dequip object and show a message about it
+    pub fn dequip(&mut self, log: &mut Vec<(String, Color)>) {
+        if self.item.is_none() {
+            log.add(format!("Can't dequip {:?} because it's not an item.", self.name),
+                    colors::RED);
+            return
+        };
+        if let Some(ref mut equipment) = self.equipment {
+            if equipment.equipped {
+                equipment.equipped = false;
+                log.add(format!("Dequipped {} from {:?}.", self.name, equipment.slot),
+                                colors::LIGHT_YELLOW);
+            }
+        } else {
+            log.add(format!("Can't dequip {:?}. Not an equipment.", self.name),
+                    colors::RED);
+        }
     }
 }
 
@@ -754,13 +827,14 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
 
     // item random table
     let item_chances = &mut [
-        Weighted {weight: 7, item: Item::Heal},
+        Weighted {weight: 6, item: Item::Heal},
         Weighted {weight: from_dungeon_level(&[Transition{level: 4, value: 3}], level),
                   item: Item::Lightning},
         Weighted {weight: from_dungeon_level(&[Transition{level: 4, value: 1}], level),
                   item: Item::Fireball},
         Weighted {weight: from_dungeon_level(&[Transition{level: 2, value: 4}], level),
                   item: Item::Confusion},
+        Weighted {weight: 1, item: Item::Equipment},
     ];
     let item_choice = WeightedChoice::new(item_chances);
 
@@ -801,6 +875,14 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     let mut object = Object::new(x, y, 'C', "scroll of confusion",
                                                 colors::ORANGE, false);
                     object.item = Some(Item::Confusion);
+                    object
+                }
+                Item::Equipment => {
+                    // create a sword
+                    let mut object = Object::new(x, y, '/', "sword", colors::SKY, false);
+                    object.item = Some(Item::Equipment);
+                    object.equipment = Some(Equipment{equipped: false,
+                                                      slot: Slot::RightHand});
                     object
                 }
             };
