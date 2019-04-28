@@ -1463,7 +1463,7 @@ fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
     let mut player = Object::new(0, 0, '@', "player", colors::WHITE, true);
     player.alive = true;
     player.fighter = Some(Fighter{base_max_hp: 15, hp: 15, xp: 0,
-                                  base_power: 2, base_defense: 0,
+                                  base_power: 1, base_defense: 0,
                                   on_death: DeathCallback::Player});
 
     // objects list currently populated only by player
@@ -1477,10 +1477,22 @@ fn new_game(tcod: &mut Tcod) -> (Vec<Object>, Game) {
         dungeon_level: level,
     };
 
+    // initial equipment
+    let mut dagger = Object::new(0, 0, '-', "dagger", colors::SKY, false);
+    dagger.item = Some(Item::Sword);
+    dagger.equipment = Some(Equipment {
+        equipped: true,
+        slot: Slot::RightHand,
+        max_hp_bonus: 0,
+        power_bonus: 1,
+        defense_bonus: 0,
+    });
+    game.inventory.push(dagger);
+
     initialize_fov(&game.map, tcod);
 
     // welcome message
-    game.log.add("Hi! Tuloy po kayo", colors::RED);
+    game.log.add("Welcome!", colors::RED);
 
     (objects, game)
 }
