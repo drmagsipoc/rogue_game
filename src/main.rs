@@ -78,6 +78,16 @@ enum Slot {
     Head,
 }
 
+impl std::fmt::Display for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Slot::LeftHand => write!(f, "left hand"),
+            Slot::RightHand => write!(f, "right hand"),
+            Slot::Head => write!(f, "head"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 /// An object that can be equipped, yielding bonus
 struct Equipment {
@@ -1078,7 +1088,7 @@ fn inventory_menu(inventory: &[Object], header: &str, root: &mut Root) -> Option
             // show additional information, for equipments.
             match item.equipment {
                 Some(equipment) if equipment.equipped => {
-                    format!("{} (on {:?}", item.name, equipment.slot)
+                    format!("{} (on {})", item.name, equipment.slot)
                 }
             _ => item.name.clone()
             }
