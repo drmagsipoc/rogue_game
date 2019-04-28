@@ -651,7 +651,7 @@ impl Object {
         if let Some(ref mut equipment) = self.equipment {
             if !equipment.equipped {
                 equipment.equipped = true;
-                log.add(format!("Equipped {} on {:?}.", self.name, equipment.slot),
+                log.add(format!("Equipped {} on {}.", self.name, equipment.slot),
                         colors::LIGHT_GREEN);
             }
         } else {
@@ -670,7 +670,7 @@ impl Object {
         if let Some(ref mut equipment) = self.equipment {
             if equipment.equipped {
                 equipment.equipped = false;
-                log.add(format!("Dequipped {} from {:?}.", self.name, equipment.slot),
+                log.add(format!("Dequipped {} from {}.", self.name, equipment.slot),
                                 colors::LIGHT_YELLOW);
             }
         } else {
