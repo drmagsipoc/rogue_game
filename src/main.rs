@@ -855,7 +855,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     // create orc
                     let mut orc = Object::new(x, y, 'o', "orc", colors::DESATURATED_GREEN, true);
                     orc.fighter = Some(Fighter{max_hp: 4, hp: 4, defense: 0,
-                                               base_power: 4, xp: 2,
+                                               base_power: 3, xp: 2,
                                                on_death: DeathCallback::Monster});
                     orc.ai = Some(Ai::Basic);
                     orc
@@ -864,7 +864,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     // create troll
                     let mut troll = Object::new(x, y, 'T', "troll", colors::DARKER_GREEN, true);
                     troll.fighter = Some(Fighter{max_hp: 5, hp: 5, defense: 0,
-                                                 base_power: 4, xp: 3,
+                                                 base_power: 3, xp: 3,
                                                  on_death: DeathCallback::Monster});
                     troll.ai = Some(Ai::Basic);
                     troll
@@ -940,7 +940,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     object.item = Some(Item::Equipment);
                     object.equipment = Some(Equipment{equipped: false,
                                                       slot: Slot::RightHand,
-                                                      power_bonus: 0});
+                                                      power_bonus: 1});
                     object
                 }
             };
