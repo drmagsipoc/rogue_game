@@ -104,7 +104,8 @@ enum Item {
     Lightning,
     Fireball,
     Confusion,
-    Equipment,
+    Sword,
+    Shield,
 }
 
 enum UseResult {
@@ -159,7 +160,8 @@ fn use_item(tcod: &mut Tcod, inventory_id: usize, game: &mut Game, objects:
             Lightning => cast_lightning,
             Fireball => cast_fireball,
             Confusion => cast_confuse,
-            Equipment => toggle_equipment,
+            Sword => toggle_equipment,
+            Shield => toggle_equipment,
         };
         match on_use(tcod, inventory_id, objects, game) {
             UseResult::UsedUp => {
@@ -908,7 +910,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                   item: Item::Fireball},
         Weighted {weight: from_dungeon_level(&[Transition{level: 2, value: 4}], level),
                   item: Item::Confusion},
-        Weighted {weight: 1, item: Item::Equipment},
+        Weighted {weight: 3, item: Item::Sword},
+        Weighted {weight: 3, item: Item::Shield},
     ];
     let item_choice = WeightedChoice::new(item_chances);
 
@@ -951,15 +954,26 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     object.item = Some(Item::Confusion);
                     object
                 }
-                Item::Equipment => {
+                Item::Sword => {
                     // create a sword
                     let mut object = Object::new(x, y, '/', "Sword", colors::SKY, false);
-                    object.item = Some(Item::Equipment);
+                    object.item = Some(Item::Sword);
                     object.equipment = Some(Equipment{equipped: false,
                                                       slot: Slot::RightHand,
                                                       max_hp_bonus: 0,
                                                       power_bonus: 1,
                                                       defense_bonus: 0});
+                    object
+                }
+                Item::Shield => {
+                    // create a shield
+                    let mut object = Object::new(x, y, '[', "Shield", colors::BLUE, false);
+                    object.item = Some(Item::Shield);
+                    object.equipment = Some(Equipment{equipped: false,
+                                                      slot: Slot::LeftHand,
+                                                      max_hp_bonus: 5,
+                                                      power_bonus: 0,
+                                                      defense_bonus: 1});
                     object
                 }
             };
