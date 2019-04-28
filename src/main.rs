@@ -37,7 +37,7 @@ const MSG_X: i32 = BAR_WIDTH + 2;
 const MSG_WIDTH: i32 = SCREEN_WIDTH - BAR_WIDTH - 2;
 const MSG_HEIGHT: usize = PANEL_HEIGHT as usize - 1;
 const INVENTORY_WIDTH: i32 = 50;
-const HEAL_AMOUNT: i32 = 4;
+const HEAL_AMOUNT: i32 = 6;
 const LIGHTNING_DAMAGE: i32 = 5;
 const LIGHTNING_RANGE: i32 = 5;
 const CONFUSE_RANGE: i32 = 7;
@@ -188,11 +188,11 @@ fn cast_heal(_tcod: &mut Tcod, _inventory_id: usize, objects: &mut [Object],
     let player = &mut objects[PLAYER];
     if let Some(fighter) = player.fighter {
         if fighter.hp == player.max_hp(game) {
-            game.log.add("You are already at full health", colors::RED);
+            game.log.add("You are already at full health.", colors::RED);
             return UseResult::Cancelled;
         }
         game.log.add("Your wounds start to feel better!", colors::LIGHT_VIOLET);
-        objects[PLAYER].heal(HEAL_AMOUNT, game);
+        player.heal(HEAL_AMOUNT, game);
         return UseResult::UsedUp;
     }
     UseResult::Cancelled
@@ -653,7 +653,7 @@ impl Object {
     /// heal by the given amount, without going over the maximum
     pub fn heal(&mut self, amount: i32, game: &Game) {
         let max_hp = self.max_hp(game);
-        if let Some(mut fighter) = self.fighter {
+        if let Some(ref mut fighter) = self.fighter {
             fighter.hp += amount;
             if fighter.hp > max_hp {
                 fighter.hp = max_hp;
@@ -910,8 +910,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                   item: Item::Fireball},
         Weighted {weight: from_dungeon_level(&[Transition{level: 2, value: 4}], level),
                   item: Item::Confusion},
-        Weighted {weight: 3, item: Item::Sword},
-        Weighted {weight: 3, item: Item::Shield},
+        Weighted {weight: 1, item: Item::Sword},
+        Weighted {weight: 1, item: Item::Shield},
     ];
     let item_choice = WeightedChoice::new(item_chances);
 
@@ -971,7 +971,7 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>, level: u32) {
                     object.item = Some(Item::Shield);
                     object.equipment = Some(Equipment{equipped: false,
                                                       slot: Slot::LeftHand,
-                                                      max_hp_bonus: 5,
+                                                      max_hp_bonus: 0,
                                                       power_bonus: 0,
                                                       defense_bonus: 1});
                     object
